@@ -1,11 +1,11 @@
 package metroidvania_game
 
 import "core:path/slashpath"
+import "core:strings"
 import "core:time"
 import "oak:core"
 import "oak:gpu"
 import "oak:sound"
-import stb_image "vendor:stb/image"
 
 BUILD_SHADERS :: #config(BUILD_SHADERS, false)
 
@@ -42,6 +42,7 @@ AppState :: struct {
         tile: ^gpu.Image,
     },
     sprite_renderer: Sprite_Renderer,
+    atlas:           Texture_Atlas,
     camera_matrix:   gpu.mat4x4,
 }
 
@@ -53,17 +54,20 @@ app_initialize :: proc(state: ^AppState) {
     // Register embedded in-memory assets.
     // TODO: Rename to register_embedded_files() and get_embedded_file() or something like that.
     core.embed_assets(#load_directory("assets/shaders"), prefix = "shaders")
-    core.embed_assets(#load_directory("assets/sprites/tiles"), prefix = "sprites/tiles")
-    core.embed_assets(#load_directory("assets/sprites/enemies"), prefix = "sprites/enemies")
-    core.embed_assets(#load_directory("assets/sprites/characters"), prefix = "sprites/characters")
-    core.embed_assets(#load_directory("assets/sprites/backgrounds"), prefix = "sprites/backgrounds")
 
-    // TODO: Unify with core file/asset system somehow.
-    // core.embed_assets(#load_directory("assets/sounds"), prefix = "sounds")
+    // Load the Kenney spritesheets.
+    core.embed_assets(#load_directory("assets/sprites"), prefix = "sprites")
+    for file in #load_directory("assets/sprites") do if strings.ends_with(file.name, ".xml") {
+        atlas_load_kenney_spritesheet(&state.atlas, slashpath.join({"sprites", file.name}, context.temp_allocator))
+    }
+
+    // TODO: Unify with core file/asset system somehow?
     for file in #load_directory("assets/sounds") {
         path := slashpath.join({"sounds", file.name}, context.temp_allocator)
         sound.register_audio_data(path, file.data)
     }
+
+    defer gpu.memory_barrier()
 
     // LOAD SHADERS
     {
@@ -72,41 +76,12 @@ app_initialize :: proc(state: ^AppState) {
         state.shaders.world = gpu.create_graphics_shader(world_vert, world_frag)
     }
 
-    // LOAD IMAGES
-    {
-        state.sprites.tile = load_image("sprites/tiles/block_blue.png")
-    }
-
-    load_image :: proc(path: string) -> ^gpu.Image {
-        defer gpu.memory_barrier()
-
-        image_bytes, image_bytes_ok := core.get_asset(path)
-        if !image_bytes_ok {
-            // TODO: Panic or log the error?
-            return gpu.create_image_2D(.RGBA8_UNORM, {1, 1})
-        }
-
-        w, h: i32
-        image_pixels := stb_image.load_from_memory(
-            raw_data(image_bytes),
-            cast(i32)len(image_bytes),
-            &w,
-            &h,
-            nil,
-            4,
-        )
-        defer stb_image.image_free(image_pixels)
-
-        // Construct and upload decoded image data.
-        image := gpu.create_image_2D(.RGBA8_UNORM, {cast(int)w, cast(int)h})
-        gpu.update_image(image, image_pixels[:w * h * 4])
-        return image
-    }
+    state.sprites.tile = atlas_get_image(state.atlas, "character_green_idle")
 }
 
 app_shutdown :: proc(state: ^AppState) {
     gpu.delete_graphics_shader(state.shaders.world)
-    gpu.delete_image(state.sprites.tile)
+    atlas_destroy(&state.atlas)
     delete(state.sprite_renderer.instances)
 }
 
