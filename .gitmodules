@@ -1,0 +1,4 @@
+[submodule "deps/oak"]
+	path = deps/oak
+	url = git@github.com:Chamberlain91/Oak.git
+	branch = main

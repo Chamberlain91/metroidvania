@@ -1,0 +1,35 @@
+{
+    "$schema": "https://raw.githubusercontent.com/DanielGavin/ols/master/misc/ols.schema.json",
+    "collections": [
+        {
+            "name": "oak",
+            "path": "deps/oak"
+        }
+    ],
+    "profile": "default",
+    "profiles": [
+        {
+            "name": "default",
+            "checker_path": [
+                "src",
+                "deps/oak/algorithms",
+                "deps/oak/build",
+                "deps/oak/core",
+                "deps/oak/debug",
+                "deps/oak/gpu",
+                "deps/oak/gpu/ref",
+                "deps/oak/gpu/build",
+                "deps/oak/sound"
+            ]
+        }
+    ],
+    "checker_args": "-vet -strict-style -thread-count:1",
+    "enable_document_symbols": true,
+    "enable_semantic_tokens": true,
+    "enable_inlay_hints": true,
+    "enable_snippets": true,
+    "enable_format": true,
+    "enable_hover": true,
+    "enable_procedure_context": true,
+    "enable_references": true
+}
