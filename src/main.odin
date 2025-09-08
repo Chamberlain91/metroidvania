@@ -1,6 +1,7 @@
 package metroidvania_game
 
 import "core:path/slashpath"
+import "core:time"
 import "oak:core"
 import "oak:gpu"
 import "oak:sound"
@@ -45,6 +46,9 @@ AppState :: struct {
 }
 
 app_initialize :: proc(state: ^AppState) {
+
+    // Maintain the primary monitor target FPS.
+    core.set_target_frame_duration(time.Second / cast(time.Duration)core.get_monitor_refresh_rate())
 
     // Register embedded in-memory assets.
     // TODO: Rename to register_embedded_files() and get_embedded_file() or something like that.
