@@ -5,8 +5,8 @@ import "core:log"
 import "core:path/slashpath"
 import "core:strconv"
 import "core:strings"
-import "oak:core"
-import "oak:gpu"
+import "deps:oak/core"
+import "deps:oak/gpu"
 import stb_image "vendor:stb/image"
 
 Texture_Atlas :: struct {

@@ -3,9 +3,9 @@ package metroidvania_game
 import "core:path/slashpath"
 import "core:strings"
 import "core:time"
-import "oak:core"
-import "oak:gpu"
-import "oak:sound"
+import "deps:oak/core"
+import "deps:oak/gpu"
+import "deps:oak/sound"
 
 BUILD_SHADERS :: #config(BUILD_SHADERS, false)
 

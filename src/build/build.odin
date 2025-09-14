@@ -7,7 +7,7 @@ main :: proc() {
     app := build.Package {
         path        = "src",
         name        = "metroidvania",
-        collections = {{"oak", "deps/oak"}},
+        collections = {{"deps", "deps"}},
     }
 
     // Run the app in BUILD_SHADERS mode to generate GLSL from Odin RTTI.

@@ -1,6 +1,6 @@
 package metroidvania_game
 
-import "oak:gpu"
+import "deps:oak/gpu"
 
 Sprite_Renderer :: struct {
     instances: [dynamic]Sprite_Instance,
