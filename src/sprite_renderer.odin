@@ -35,8 +35,8 @@ sprite_renderer_append :: proc(
     instance := Sprite_Instance {
         image = gpu.image_view_index(image),
         rect  = {     //
-            cast(f32)position[0],
-            cast(f32)position[1],
+            cast(f32)position.x,
+            cast(f32)position.y,
             cast(f32)image.size.x,
             cast(f32)image.size.y,
         },
@@ -46,8 +46,13 @@ sprite_renderer_append :: proc(
 
 @(require_results)
 sprite_renderer_to_buffer :: proc(renderer: ^Sprite_Renderer) -> ^gpu.Buffer {
-    buffer := gpu.create_buffer(size_of(Sprite_Instance) * len(renderer.instances))
-    gpu.copy(buffer, 0, renderer.instances[:])
-    gpu.memory_barrier() // TODO: Narrow to host memory
-    return buffer
+    if count := len(renderer.instances); count > 0 {
+        buffer := gpu.create_buffer(size_of(Sprite_Renderer) * count)
+        gpu.copy(buffer, 0, renderer.instances[:])
+        gpu.memory_barrier() // TODO: Narrow to host memory
+        return buffer
+    } else {
+        // No instances, no buffer
+        return nil
+    }
 }
