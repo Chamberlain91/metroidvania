@@ -20,6 +20,10 @@ Sprite_Push_Constants :: struct {
     sprite_buffer: gpu.Buffer_Reference(Sprite_Buffer),
 }
 
+sprite_renderer_destroy :: proc(renderer: Sprite_Renderer) {
+    delete(renderer.instances)
+}
+
 sprite_renderer_clear :: proc(renderer: ^Sprite_Renderer) {
     clear(&renderer.instances)
 }

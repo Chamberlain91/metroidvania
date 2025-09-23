@@ -1,6 +1,6 @@
 package metroidvania_game
 
-import "core:fmt"
+@(require) import "core:log"
 import "core:math/linalg"
 import "core:math/linalg/glsl"
 import "core:path/slashpath"
@@ -50,7 +50,15 @@ AppState :: struct {
     line_renderer:   Line_Renderer,
     atlas:           Texture_Atlas,
     camera_matrix:   gpu.mat4x4,
-    player_rect:     ds.BVH_Rect,
+    player:          Player,
+    input:           struct {
+        m_screen: [2]int,
+        m_world:  [2]int,
+        // TODO: Enum array of input states? ie. key[.Jump]
+        k_left:   bool,
+        k_right:  bool,
+        k_jump:   bool,
+    },
 }
 
 app_initialize :: proc(state: ^AppState) {
@@ -101,6 +109,8 @@ app_initialize :: proc(state: ^AppState) {
     project_init()
 
     state.sprites.tile = atlas_get_image(state.atlas, "character_green_idle")
+
+    change_level("level_0")
 }
 
 app_shutdown :: proc(state: ^AppState) {
@@ -109,52 +119,89 @@ app_shutdown :: proc(state: ^AppState) {
     gpu.delete_graphics_shader(state.shaders.lines)
 
     atlas_destroy(&state.atlas)
-    delete(state.sprite_renderer.instances)
+
+    sprite_renderer_destroy(state.sprite_renderer)
+    line_renderer_destroy(state.line_renderer)
+
     destroy_project()
 }
 
 app_update :: proc(state: ^AppState) {
 
+    level := current_level()
+    assert(level != nil)
+
     fb_width, fb_height := expand_values(core.get_framebuffer_size())
     aspect := cast(f32)fb_width / cast(f32)fb_height
 
-    cam_height: f32 = 1024
-    cam_width: f32 = 1024 * aspect
+    // TODO: Proper "view around the player" instead of zooming on the level
+    max_level_dim := 1.1 * cast(f32)max(level.size.x, level.size.y)
+    cam_h := max_level_dim
+    cam_w := max_level_dim * aspect
+    cam_x := cast(f32)(level.position.x + (level.size.x / 2)) - (cam_w / 2)
+    cam_y := cast(f32)(level.position.y + (level.size.y / 2)) - (cam_h / 2)
 
-    cam_x := -(cam_width - cam_height) / 2
+    state.camera_matrix = gpu.ortho_matrix(cam_w, cam_h) * glsl.mat4Translate({-cam_x, -cam_y, 0.0})
 
-    state.camera_matrix = gpu.ortho_matrix(cam_width, cam_height) * glsl.mat4Translate({-cam_x, 0.0, 0.0})
+    // Maps mouse screen position to world position.
+    mouse_ndc := ((core.mouse_position() / [2]f32{cast(f32)fb_width, cast(f32)fb_height}) * 2.0) - 1.0
+    mouse_world := linalg.inverse(state.camera_matrix) * [4]f32{mouse_ndc.x, -mouse_ndc.y, 0.0, 1.0}
 
-    // Maps mouse screen to world.
-    ndc_to_world := linalg.inverse(state.camera_matrix)
-    mouse_screen := core.mouse_position()
-    mouse_ndc := ([2]f32{mouse_screen.x / cast(f32)fb_width, mouse_screen.y / cast(f32)fb_height} * 2.0) - 1.0
-    mouse_world := ndc_to_world * [4]f32{mouse_ndc.x, -mouse_ndc.y, 0.0, 1.0}
-    mx, my := cast(int)mouse_world.x, cast(int)mouse_world.y
+    // Store computed mouse state.
+    state.input.m_screen = linalg.array_cast(core.mouse_position(), int)
+    state.input.m_world = linalg.array_cast(mouse_world.xy, int)
 
-    sprite_renderer_append(&state.sprite_renderer, {mx, my}, state.sprites.tile)
+    // Simulate the player (physics, respond to user input, etc)
+    player_update(state)
 
-    state.player_rect = {
-        cast(i32)mx,
-        cast(i32)my,
-        cast(i32)state.sprites.tile.size.x,
-        cast(i32)state.sprites.tile.size.y,
-    }
-    line_renderer_append_rect(&state.line_renderer, linalg.array_cast(state.player_rect, int), .Yellow)
+    // Draw the level colliders as lines.
+    for c in level.colliders do line_renderer_append_rect(&state.line_renderer, c.rect, .DarkGray)
+    line_renderer_append_rect(&state.line_renderer, level.rect, .White)
 
-    level := &levels["level_0"]
-    {
-        for c in level.colliders {
-            line_renderer_append_rect(&state.line_renderer, linalg.array_cast(c.rect, int), .Gray)
-        }
+    // @(thread_local)
+    // broad_count, max_broad_count: int
+    // broad_count = 0
 
-        ds.bvh_traverse_predicate(&level.colliders_bvh, proc(rect: ds.BVH_Rect) -> bool {
-            line_renderer_append_rect(&app.state.line_renderer, linalg.array_cast(rect, int), .Magenta)
-            return ds.rect_overlaps(app.state.player_rect, rect)
-        }, proc(collider: ^Collider) {
-            line_renderer_append_rect(&app.state.line_renderer, linalg.array_cast(collider.rect, int), .Cyan)
-        })
-    }
+    // @(thread_local)
+    // narrow_count, max_narrow_count: int
+    // narrow_count = 0
+
+    // contacts: [dynamic]^Collider
+    // defer delete(contacts)
+
+    // // Test for player collision.
+    // ds.bvh_traverse_predicate(
+    //     &level.colliders_bvh,
+    //     // Branch visitor test.
+    //     proc(rect: ds.BVH_Rect) -> bool {
+    //         broad_count += 1
+    //         hit := ds.rect_overlaps(app.state.player_rect, rect)
+    //         line_renderer_append_rect(&app.state.line_renderer, rect, hit ? .Magenta : .Yellow)
+    //         return hit
+    //     },
+    //     // Leaf visitor.
+    //     proc(colliders: []Collider) {
+    //         // Reach leaf node, test each item in the leaf.
+    //         for c in colliders {
+    //             hit := ds.rect_overlaps(app.state.player_rect, c.rect)
+    //             line_renderer_append_rect(&app.state.line_renderer, c.rect, hit ? .Red : .Cyan)
+    //             narrow_count += 1
+    //         }
+    //     },
+    // )
+
+    // max_broad_count = max(max_broad_count, broad_count)
+    // max_narrow_count = max(max_narrow_count, narrow_count)
+
+    // log.debugf("broad test: {} / {}", broad_count, max_broad_count)
+    // log.debugf("narrow test: {} / {}", narrow_count, max_narrow_count)
+
+    // // Test for player collision.
+    // ds.bvh_traverse(&level.colliders_bvh, app.state.player_rect, proc(colliders: []Collider) {
+    //     for c in colliders do if ds.rect_overlaps(app.state.player_rect, c.rect) {
+    //         line_renderer_append_rect(&app.state.line_renderer, c.rect, .Red)
+    //     }
+    // })
 }
 
 app_render :: proc(state: ^AppState) {
@@ -238,4 +285,21 @@ Toggle_Block :: struct {
 Toggle_Button :: struct {
     using _: Entity,
     color:   Toggle_Color,
+}
+
+player_update :: proc(state: ^AppState) {
+
+    state.player.position = state.input.m_world
+    state.player.size = {96, 96}
+
+    // ...
+    rect := make_rect(state.player.position, state.player.size)
+    hit := check_collision(rect)
+
+    sprite_renderer_append(&state.sprite_renderer, state.player.position - {16, 32}, state.sprites.tile)
+    line_renderer_append_rect(&state.line_renderer, rect, hit ? .Red : .Yellow)
+}
+
+make_rect :: proc(pos, size: [2]int) -> [4]int {
+    return {pos.x, pos.y, size.x, size.y}
 }

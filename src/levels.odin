@@ -5,6 +5,7 @@ import "core:fmt"
 import "core:log"
 import "core:strconv"
 import "core:strings"
+import "core:time"
 import "deps:oak/core"
 import "deps:oak/ds"
 import "deps:oak/gpu"
@@ -19,6 +20,8 @@ Level :: struct {
     position:      [2]int,
     // Size of the level in the world (px).
     size:          [2]int,
+    // Bounding rect of the level in the world (px).
+    rect:          [4]int,
     // Size of a tile in the level (px).
     tile_size:     int,
     // The integer representing the tile types.
@@ -29,13 +32,69 @@ Level :: struct {
     colliders_bvh: ds.BVH(Collider),
 }
 
-// Union? Box, Circle, Polygon(s)?
-Collider :: struct {
-    rect: [4]i32,
-    id:   int,
+level_destroy :: proc(level: Level) {
+    ds.grid_destroy(level.grid)
+    ds.bvh_destroy(level.colliders_bvh)
+    delete(level.colliders)
 }
 
-levels: map[string]Level
+// Determines if a rectangle collides with the level grid.
+@(require_results)
+level_check_collision :: proc(level: Level, rect: [4]int) -> (hit: bool) {
+
+    rect_min := rect.xy - level.position
+    rect_max := rect_min + rect.zw
+
+    rect_min = (rect_min / level.tile_size)
+    rect_max = (rect_max / level.tile_size) + 1
+
+    for y in rect_min.y ..< rect_max.y {
+        for x in rect_min.x ..< rect_max.x {
+            if check_grid(level, {x, y}) {
+                // Touched a tile.
+                hit = true
+                return
+            }
+        }
+    }
+
+    // Did not touch anything (airborne).
+    hit = false
+    return
+
+    check_grid :: proc(level: Level, co: [2]int) -> bool {
+        AIR :: 0
+
+        // Assume out-of-bounds coordinates is air.
+        if !ds.grid_valid(level.grid, co) {
+            return false
+        }
+
+        return ds.grid_get(level.grid, co) != AIR
+    }
+}
+
+// Determines if a rectangle collides with the level grid or entities.
+@(require_results)
+check_collision :: proc(rect: [4]int) -> bool {
+
+    if _world.level == nil {
+        return false
+    }
+
+    if level_check_collision(_world.level^, rect) {
+        return true
+    }
+
+    return false
+}
+
+// Union? Box, Circle, Polygon(s)?
+// 40 bytes
+Collider :: struct {
+    rect: [4]int,
+    id:   int,
+}
 
 project_init :: proc() {
 
@@ -83,8 +142,9 @@ project_init :: proc() {
         // l.neighbours
 
         level := Level {
-            size     = {l.px_width, l.px_height},
             position = {l.world_x, l.world_y},
+            size     = {l.px_width, l.px_height},
+            rect     = {l.world_x, l.world_y, l.px_width, l.px_height},
         }
 
         for f in l.field_instances {
@@ -126,9 +186,9 @@ project_init :: proc() {
                     ds.grid_set(level.grid, {ix, iy}, v)
 
                     if v > 0 {
-                        x := cast(i32)(ix * level.tile_size)
-                        y := cast(i32)(iy * level.tile_size)
-                        w := cast(i32)(level.tile_size)
+                        x := level.position.x + (ix * level.tile_size)
+                        y := level.position.y + (iy * level.tile_size)
+                        w := level.tile_size
 
                         collider := Collider {
                             rect = {x, y, w, w},
@@ -140,15 +200,21 @@ project_init :: proc() {
                 }
             }
 
-            ds.bvh_build(&level.colliders_bvh, level.colliders[:], proc(c: Collider) -> ds.BVH_Rect {
+            start := time.tick_now()
+
+            if err := ds.bvh_build(&level.colliders_bvh, level.colliders[:], 1, proc(c: Collider) -> ds.BVH_Rect {
                 return c.rect
-            })
+            }); err != .None {
+                log.panicf("Failed to build level BVH: {}", err)
+            }
+
+            log.infof("ds.bvh_build: {}", time.tick_since(start))
         }
 
-        levels[intern(l.identifier)] = level
+        _world.levels[intern(l.identifier)] = level
     }
 
-    for name in levels {
+    for name in _world.levels {
         log.debugf("Loaded level '{}'", name)
     }
 
@@ -340,8 +406,16 @@ project_init :: proc() {
 }
 
 destroy_project :: proc() {
+
     delete(_world.entity.types)
     delete(_world.entity.definitions)
+
+    for _, level in _world.levels {
+        level_destroy(level)
+    }
+    delete(_world.levels)
+
+    strings.intern_destroy(&_world.strs)
 }
 
 project_register_entity :: proc($E: typeid, identifier: string = "") where intrinsics.type_is_struct(E) {
@@ -400,7 +474,30 @@ _world: struct {
         types:       map[string]typeid,
         definitions: []Entity_Definition,
     },
+    levels: map[string]Level,
+    level:  ^Level,
     strs:   strings.Intern,
+}
+
+// Gets the current level.
+current_level :: proc() -> ^Level {
+    return _world.level
+}
+
+// Change to the specified level.
+change_level :: proc(identifier: string) -> bool {
+
+    if level, ok := find_level(identifier); ok {
+        _world.level = level
+        return true
+    }
+
+    return false
+}
+
+// Find a level by name.
+find_level :: proc(identifier: string) -> (^Level, bool) #optional_ok {
+    return &_world.levels[identifier]
 }
 
 Enum_UID :: distinct int
@@ -509,8 +606,8 @@ Int_Grid_Value_Definition :: struct {
 // An instance of an entity.
 Entity :: struct {
     meta:     ^Entity_Definition,
-    position: [2]f32,
-    size:     [2]f32,
+    position: [2]int,
+    size:     [2]int,
 }
 
 Neighbor_Direction :: enum {

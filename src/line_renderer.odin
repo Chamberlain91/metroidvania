@@ -20,6 +20,10 @@ Line_Push_Constants :: struct {
     line_buffer:   gpu.Buffer_Reference(Line_Buffer),
 }
 
+line_renderer_destroy :: proc(renderer: Line_Renderer) {
+    delete(renderer.instances)
+}
+
 line_renderer_clear :: proc(renderer: ^Line_Renderer) {
     clear(&renderer.instances)
 }
@@ -27,15 +31,16 @@ line_renderer_clear :: proc(renderer: ^Line_Renderer) {
 line_renderer_append :: proc(renderer: ^Line_Renderer, a, b: [2]int, color: Line_Color, loc := #caller_location) {
     @(static, rodata)
     Line_Colors := [Line_Color]gpu.vec4 {
-        .White   = {1.0, 1.0, 1.0, 1.0},
-        .Black   = {0.0, 0.0, 0.0, 1.0},
-        .Red     = {1.0, 0.0, 0.0, 1.0},
-        .Green   = {0.0, 1.0, 0.0, 1.0},
-        .Blue    = {0.0, 0.0, 1.0, 1.0},
-        .Cyan    = {0.0, 1.0, 1.0, 1.0},
-        .Magenta = {1.0, 0.0, 1.0, 1.0},
-        .Yellow  = {1.0, 1.0, 0.0, 1.0},
-        .Gray    = {0.5, 0.5, 0.5, 1.0},
+        .White    = {1.0, 1.0, 1.0, 1.0},
+        .Black    = {0.0, 0.0, 0.0, 1.0},
+        .Red      = {1.0, 0.0, 0.0, 1.0},
+        .Green    = {0.0, 1.0, 0.0, 1.0},
+        .Blue     = {0.0, 0.0, 1.0, 1.0},
+        .Cyan     = {0.0, 1.0, 1.0, 1.0},
+        .Magenta  = {1.0, 0.0, 1.0, 1.0},
+        .Yellow   = {1.0, 1.0, 0.0, 1.0},
+        .Gray     = {0.5, 0.5, 0.5, 1.0},
+        .DarkGray = {0.1, 0.1, 0.1, 1.0},
     }
 
     instance := Line_Instance {
@@ -86,4 +91,5 @@ Line_Color :: enum {
     Magenta,
     Yellow,
     Gray,
+    DarkGray,
 }
